@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YTM Archiver Control Panel</title>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --text: #f8fafc;
+      --muted: #94a3b8; --accent: #38bdf8; --ok: #22c55e;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text);
+      margin: 0; padding: 1.25rem; max-width: 820px; margin-inline: auto;
+    }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem;
+    }
+    .badge {
+      padding: 0.45rem 0.9rem; border-radius: 999px;
+      background: #334155; font-weight: 600; font-size: 0.88rem;
+      border: 1px solid var(--accent);
+    }
+    .card {
+      background: var(--card); border-radius: 0.75rem;
+      padding: 1.25rem; margin-bottom: 1.25rem;
+    }
+    h2 { margin-top: 0; font-size: 1.1rem; }
+    .row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    input[type="text"], input[type="number"] {
+      flex: 1; padding: 0.6rem; border-radius: 0.5rem;
+      border: 1px solid #475569; background: #0f172a; color: var(--text);
+    }
+    button {
+      background: var(--accent); color: #0f172a; border: none;
+      padding: 0.6rem 1.1rem; border-radius: 0.5rem; font-weight: 700; cursor: pointer;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.6rem; border-bottom: 1px solid #334155; }
+    th { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>YTM Opus Archiver</h1>
+    <div id="statusBadge" class="badge">Connecting...</div>
+  </header>
+
+  <section class="card">
+    <h2>Subscribe to YouTube Music Playlist</h2>
+    <form id="subForm" class="row">
+      <input type="text" id="playlistUrl" placeholder="https://music.youtube.com/playlist?list=..." required />
+      <button type="submit">Subscribe & Sync</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Subscribed Playlists</h2>
+    <table>
+      <thead>
+        <tr><th>Title</th><th>Tracks</th><th>M3U Path</th><th>Last Synced</th></tr>
+      </thead>
+      <tbody id="playlistTable"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Daemon Configuration</h2>
+    <form id="cfgForm">
+      <div class="row">
+        <input type="text" id="storagePath" placeholder="Storage Path (/sdcard/Music/YTM)" required />
+        <input type="number" id="syncInterval" placeholder="Sync Interval (sec)" required />
+      </div>
+      <div class="row" style="align-items:center; justify-content:space-between;">
+        <label><input type="checkbox" id="embedMeta" /> Embed Vorbis Cover Art & LRCLIB Lyrics</label>
+        <button type="submit">Update Config</button>
+      </div>
+    </form>
+  </section>
+
+  <script>
+    const badge = document.getElementById('statusBadge');
+    const evtSource = new EventSource('/api/events');
+    evtSource.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      badge.textContent = data.active_jobs > 0
+        ? `${data.state} (${data.active_jobs} queued)`
+        : data.state;
+      if (data.state === 'Synced') loadPlaylists();
+    };
+
+    async function loadPlaylists() {
+      const res = await fetch('/api/playlists');
+      const items = await res.json();
+      const tbody = document.getElementById('playlistTable');
+      tbody.innerHTML = items.map(p => `
+        <tr>
+          <td><strong>${p.title}</strong></td>
+          <td>${p.track_count}</td>
+          <td><code>${p.m3u_path}</code></td>
+          <td>${p.last_synced || 'Pending'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadConfig() {
+      const res = await fetch('/api/config');
+      const cfg = await res.json();
+      document.getElementById('storagePath').value = cfg.storage_path;
+      document.getElementById('syncInterval').value = cfg.sync_interval_seconds;
+      document.getElementById('embedMeta').checked = cfg.embedded_metadata;
+    }
+
+    document.getElementById('subForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('playlistUrl').value;
+      await fetch('/api/playlists/subscribe', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ url })
+      });
+      document.getElementById('playlistUrl').value = '';
+      loadPlaylists();
+    });
+
+    document.getElementById('cfgForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await fetch('/api/config/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          storage_path: document.getElementById('storagePath').value,
+          sync_interval_seconds: parseInt(document.getElementById('syncInterval').value, 10),
+          embedded_metadata: document.getElementById('embedMeta').checked
+        })
+      });
+    });
+
+    loadPlaylists();
+    loadConfig();
+  </script>
+</body>
+</html>

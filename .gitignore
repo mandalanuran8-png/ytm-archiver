@@ -1,0 +1,13 @@
+# Binaries
+ytm-archiver
+*.exe
+*.bin
+
+# State & Local media
+state.db*
+daemon.log
+music_test/
+*.opus
+*.lrc
+*.m3u
+*.jpg
